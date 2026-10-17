@@ -123,6 +123,7 @@ const MARKDOWN_LABELS: MarkdownLabels = Object.freeze({
   footnotes: '脚注',
 })
 const TERMINAL_LABELS: TerminalBlockLabels = Object.freeze({
+  commandLine: (line: number) => `命令行 ${line}`,
   signal: (signal: string) => `信号 ${signal}`,
   exitCode: (exitCode: number) => `退出码 ${exitCode}`,
   noExitCode: '未正常退出',

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.9.0 — 2026-10-17
+
+- Target official DeepSeek Harness **0.2.1-rc.2** (`dsh-v0.2.1-rc.2`, `@deepseek-ai/dsh@0.2.1-rc.2`, commit `687f282e8625c6b8d11ff58211a90524be2e4317`). Dev pins are `0.2.1-rc.2`. `@deepseek-ai/dsh-*` peers and `engines.dsh` are `>=0.2.1-rc.1 <0.2.2`, matching DSHX 0.9.7: accepts `0.2.1-rc.1` / `0.2.1-rc.2` / stable `0.2.1`, rejects `0.2.1` alphas and `0.2.0-rc.2`. `@deepseek-ai/cordis` stays `~4.0.4`.
+- Icons stay `IconChevronRightOutlineRegular`, `IconRefreshOutlineRegular`, `IconCheckOutlineRegular`, and `IconCopyOutlineRegular`. Those exports are still present in `@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.2`. Size-suffixed names remain absent.
+- Terminal card labels gain required `commandLine` for overflowing authored command lines (`命令行 N`). Client bundle rebuilt; host entry `lib/dsh-watcher.js` kept from the prior full commit (tsdown 0.22 still stubs that entry).
+
 ## 0.8.0 — 2026-10-07
 
 - The daily token chart books each settlement on the host's local calendar day. A session's whole total is no longer piled onto `updatedAt`. Projection `stateVersion` is 2. Version 1 caches still render through the old fallback until that session is refolded.
