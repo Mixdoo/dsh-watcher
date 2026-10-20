@@ -1,4 +1,4 @@
-/** Read-only DSH 0.2.0-rc.2 log fold. No prompt, reasoning or tool body is retained. */
+/** Read-only DSH 0.2.1-rc.2 log fold. No prompt, reasoning or tool body is retained. */
 import { createHash } from 'node:crypto';
 export const KEY = 'watcherInsights';
 const DAY_CAP = 400;
@@ -9,15 +9,31 @@ const count = v => Number.isSafeInteger(v) && v >= 0;
 const elapsed = (start, end) => start === null ? 0 : Math.max(0, end - start);
 export function emptyStats() {
   return { calls: 0, reported: 0, exactTotals: 0, tokens: 0, input: 0, output: 0,
-    cacheRead: 0, cacheWrite: 0, reasoning: 0, reasoningReports: 0,
+    cacheRead: 0, cacheWrite: 0, cacheReports: 0, reasoning: 0, reasoningReports: 0,
     modelMs: 0, timedCalls: 0, firstMs: 0, firstSamples: 0, reasoningMs: 0,
     tools: 0, toolErrors: 0, toolMs: 0, bashMs: 0, retries: 0 };
 }
+export function emptySurface() {
+  return { system: 0, tools: 0, memory: 0, files: 0, results: 0, conversation: 0 };
+}
+/** Completed turns retained per session for time-of-day and shape analysis. */
+export const TURN_LOG_CAP = 500;
+export function emptyToolStat(name) {
+  return { name, calls: 0, errors: 0, toolMs: 0, stepTokens: 0, resultChars: 0 };
+}
+export function emptySkillStat(name) {
+  return { name, modelCalls: 0, userCalls: 0, errors: 0, toolMs: 0, stepTokens: 0, injectedChars: 0, lastSeen: 0 };
+}
 export function initialState(header = {}, inherited = 0) {
-  return { version: 2, sessionId: String(header.id ?? ''), skip: inherited, seq: -1,
+  return { version: 4, sessionId: String(header.id ?? ''), skip: inherited, seq: -1,
     updatedAt: 0, route: { provider: 'unknown', model: 'unknown' }, totals: emptyStats(),
     models: [], days: [], turn: null, open: null, tools: [], previousFailure: null,
-    findings: [], findingCount: 0 };
+    findings: [], findingCount: 0,
+    contextWindow: null, surfaceNodes: [], surface: emptySurface(), surfacePartial: false,
+    lastSurface: null, requests: [],
+    cwd: typeof header.cwd === 'string' && header.cwd ? header.cwd : null,
+    preset: typeof header.agentPreset === 'string' && header.agentPreset ? header.agentPreset : null,
+    prompts: 0, stepTokens: null, stepCalls: [], toolStats: [], skillStats: [], turns: [] };
 }
 function normalizeUsage(value) {
   if (!record(value) || !count(value.inputTokens) || !count(value.outputTokens)) return null;
@@ -27,6 +43,7 @@ function normalizeUsage(value) {
   if (!Number.isSafeInteger(minimum) || (value.totalTokens !== undefined && value.totalTokens < minimum)) return null;
   return { input: value.inputTokens, output: value.outputTokens, cacheRead: value.cacheReadTokens ?? 0,
     cacheWrite: value.cacheWriteTokens ?? 0, reasoning: value.reasoningTokens ?? null,
+    cacheReported: value.cacheReadTokens !== undefined || value.cacheWriteTokens !== undefined,
     tokens: value.totalTokens ?? minimum, exact: value.totalTokens !== undefined };
 }
 function canonical(v) {
@@ -46,6 +63,41 @@ function signatureOf(name, args) {
   const hash = fingerprint(args);
   return hash === null ? null : fingerprint([name, hash]);
 }
+/** Skill name inside a `skill` tool call's raw JSON arguments; absent fields are not invented. */
+function skillNameOf(args) {
+  try {
+    const value = typeof args === 'string' ? JSON.parse(args) : args;
+    return record(value) && typeof value.name === 'string' && value.name ? value.name : null;
+  } catch { return null; }
+}
+/** Text length of message content blocks without retaining any body. */
+function textLengthOf(content) {
+  if (!Array.isArray(content)) return 0;
+  let total = 0;
+  for (const block of content) if (record(block) && typeof block.text === 'string') total += block.text.length;
+  return total;
+}
+function toolStatRow(s, name) {
+  let row = s.toolStats.find(t => t.name === name);
+  if (!row) { row = emptyToolStat(name); s.toolStats.push(row); }
+  return row;
+}
+function skillStatRow(s, name) {
+  let row = s.skillStats.find(t => t.name === name);
+  if (!row) { row = emptySkillStat(name); s.skillStats.push(row); }
+  return row;
+}
+/** At a step boundary, charge its settled usage to every call the step produced. */
+function flushStepCalls(s, turn, step) {
+  const st = s.stepTokens;
+  const calls = s.stepCalls;
+  s.stepCalls = [];
+  if (!st || st.turn !== turn || st.step !== step || !calls.length) return;
+  for (const c of calls) {
+    toolStatRow(s, c.name).stepTokens += st.tokens;
+    if (c.skillName) skillStatRow(s, c.skillName).stepTokens += st.tokens;
+  }
+}
 function modelRow(s, route) {
   const effort = typeof route?.effort === 'string' ? route.effort : null;
   let row = s.models.find(m => m.provider === route.provider && m.model === route.model && (m.effort ?? null) === effort);
@@ -54,6 +106,74 @@ function modelRow(s, route) {
     s.models.push(row);
   }
   return row;
+}
+/* ---- 上下文水面（估算）：归因、定价、append/replace ---- */
+const CHARS_PER_TOKEN = 4; // 与 dsh-token-meter 相同的固定密度启发式
+const ROLE_OVERHEAD = 4;
+const SURFACE_NODE_CAP = 3000;
+const REQUEST_CAP = 60;
+const SURFACE_TYPES = new Set(['system/message', 'developer/message', 'user/message', 'assistant/message', 'tool/result']);
+const BUCKETS = ['system', 'tools', 'memory', 'files', 'results', 'conversation'];
+function priceMessage(message) {
+  // 序列化价 + 角色框架开销；与 token-meter 同档精度，不需要逐块定价。
+  let text;
+  try { text = JSON.stringify(message?.content ?? ''); } catch { return 0; }
+  if (typeof text !== 'string' || text.length === 0 || text === '""' || text === '[]') return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD;
+}
+function priceTools(header) {
+  if (!record(header) || !Array.isArray(header.tools) || header.tools.length === 0) return 0;
+  try { return Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN); } catch { return 0; }
+}
+function bucketFor(type, message) {
+  if (type === 'system/message') return 'system';
+  if (type === 'developer/message') return 'memory';
+  if (type === 'tool/result') return 'results';
+  if (type === 'assistant/message') return 'conversation';
+  if (type === 'user/message') {
+    const source = record(message?.source) ? message.source : null;
+    const kind = typeof source?.kind === 'string' ? source.kind : 'user';
+    if (kind !== 'user') return 'memory'; // AGENTS.md、技能、文件变更通知、cron 等注入内容
+    const blocks = Array.isArray(message?.content) ? message.content : [];
+    return blocks.some(b => record(b) && (b.type === 'file' || b.type === 'image')) ? 'files' : 'conversation';
+  }
+  return 'conversation';
+}
+function surfaceTotal(buckets) {
+  let total = 0;
+  for (const k of BUCKETS) total += buckets[k];
+  return total;
+}
+function surfaceTotals(s) {
+  return { ...s.surface, total: surfaceTotal(s.surface) };
+}
+function surfaceDiff(now, before) {
+  const delta = { total: 0 };
+  for (const k of BUCKETS) delta[k] = (now[k] ?? 0) - (before?.[k] ?? 0);
+  delta.total = (now.total ?? 0) - (before?.total ?? 0);
+  return delta;
+}
+function applySurface(s, event) {
+  const d = event.data;
+  const tokens = priceMessage(d.message);
+  if (tokens === 0) return;
+  const bucket = bucketFor(event.type, d.message);
+  const op = event.surfaceOp ?? d.surfaceOp;
+  if (record(op) && op.op === 'replace' && count(op.startSeq) && count(op.endSeq)) {
+    const start = op.startSeq, end = op.endSeq;
+    for (const n of s.surfaceNodes) {
+      if (n.seq >= start && n.seq <= end) s.surface[n.bucket] = Math.max(0, s.surface[n.bucket] - n.tokens);
+    }
+    s.surfaceNodes = s.surfaceNodes.filter(n => n.seq < start || n.seq > end);
+  }
+  s.surfaceNodes.push({ seq: event.seq, bucket, tokens });
+  if (s.surfaceNodes.length > SURFACE_NODE_CAP) {
+    const dropped = s.surfaceNodes.slice(0, s.surfaceNodes.length - SURFACE_NODE_CAP);
+    for (const n of dropped) s.surface[n.bucket] = Math.max(0, s.surface[n.bucket] - n.tokens);
+    s.surfaceNodes = s.surfaceNodes.slice(-SURFACE_NODE_CAP);
+    s.surfacePartial = true;
+  }
+  s.surface[bucket] += tokens;
 }
 function books(s, route = s.route) { return [s.totals, modelRow(s, route), ...(s.turn ? [s.turn.stats] : [])]; }
 function creditDay(s, time, route, u) {
@@ -75,7 +195,7 @@ function begin(s, d, time, uncertain = false) {
   s.open = { turn: d.turn, step: d.step, start: uncertain ? null : time, first: null,
     reasoningFirst: null, reasoningLast: null, lastContentAt: null, usage: null, route: { ...s.route } };
 }
-function settle(s, time, usage, source) {
+function settle(s, time, usage, source, surfaceSnapshot = null) {
   const a = s.open;
   if (!a) return;
   const route = record(source) && typeof source.provider === 'string' && typeof source.model === 'string'
@@ -90,12 +210,31 @@ function settle(s, time, usage, source) {
     if (u) {
       b.reported++; b.exactTotals += Number(u.exact); b.tokens += u.tokens;
       for (const k of ['input', 'output', 'cacheRead', 'cacheWrite']) b[k] += u[k];
+      // Providers that omit cache buckets stay "unknown" instead of counting as a
+      // precise 0% hit; older checkpointed stats may lack the counter entirely.
+      if (u.cacheReported) b.cacheReports = (b.cacheReports ?? 0) + 1;
       if (u.reasoning !== null) { b.reasoningReports++; b.reasoning += u.reasoning; }
     }
   }
   // Same guard as the books above: usage is credited once per settlement, so a
   // replayed event that already settled cannot reach here a second time.
-  if (u) creditDay(s, time, route, u);
+  if (u) {
+    creditDay(s, time, route, u);
+    // The prompt snapshot predates this event's own append (e.g. the assistant
+    // message the request produced), so "这发装了什么" stays a prompt, not a
+    // prompt-plus-response. Non-surface settles pass null and read live state.
+    const surface = surfaceSnapshot ?? surfaceTotals(s);
+    s.requests.push({
+      turn: a.turn, step: a.step, seq: s.seq, endedAt: time, route: { ...route }, usage: u,
+      firstMs: a.start === null || a.first === null ? null : elapsed(a.start, a.first),
+      modelMs: a.start === null ? null : elapsed(a.start, time),
+      reasoningMs: a.reasoningFirst === null || a.reasoningLast === null ? null : elapsed(a.reasoningFirst, a.reasoningLast),
+      surface, delta: surfaceDiff(surface, s.lastSurface),
+    });
+    if (s.requests.length > REQUEST_CAP) s.requests = s.requests.slice(-REQUEST_CAP);
+    s.lastSurface = surface;
+  }
+  if (u && s.stepTokens) s.stepTokens.tokens += u.tokens;
   s.open = null;
 }
 function applyChunk(open, chunk, time) {
@@ -131,20 +270,35 @@ function applyStream(open, stream) {
     }
   }
 }
-const interesting = new Set(['request/header', 'user/message', 'turn/start', 'step/start', 'assistant/attempt', 'assistant/message', 'llm/retry', 'tool/call', 'tool/result', 'step/end', 'turn/end']);
+const interesting = new Set(['request/header', 'request/context', 'user/message', 'system/message', 'developer/message', 'turn/start', 'step/start', 'assistant/attempt', 'assistant/message', 'llm/retry', 'tool/call', 'tool/result', 'step/end', 'turn/end']);
+const NO_TURN_GUARD = new Set(['request/header', 'request/context', 'user/message', 'system/message']);
+const NO_STEP_GUARD = new Set(['request/header', 'request/context', 'user/message', 'system/message', 'developer/message', 'turn/start', 'turn/end']);
 export function reduceEvent(state, event) {
   if (!record(event) || !interesting.has(event.type) || !count(event.seq) || !Number.isFinite(event.time) || !record(event.data)) return state;
   if (event.seq <= state.seq) return state;
   const d = event.data;
-  if (event.seq < state.skip && event.type !== 'request/header') return state;
-  if (event.type === 'user/message' && !state.previousFailure) return state;
-  if (!['request/header', 'user/message'].includes(event.type) && !count(d.turn)) return state;
-  if (!['request/header', 'user/message', 'turn/start', 'turn/end'].includes(event.type) && !count(d.step)) return state;
-  if ((event.type === 'assistant/attempt' || event.type === 'assistant/message') && d.stream !== undefined && !Array.isArray(d.stream)) return state;
-  if (event.type === 'assistant/attempt' && (!state.open || state.open.turn !== d.turn || state.open.step !== d.step)) return state;
+  const isSurface = SURFACE_TYPES.has(event.type);
+  if (event.seq < state.skip && event.type !== 'request/header') {
+    // Inherited-prefix events are skipped by design; surface tracking only
+    // notes that the estimate may undercount rather than replaying them.
+    if (!isSurface || state.surfacePartial) return state;
+    const marked = structuredClone(state);
+    marked.surfacePartial = true;
+    return marked;
+  }
+  const passesGuards =
+    (NO_TURN_GUARD.has(event.type) || count(d.turn)) &&
+    (NO_STEP_GUARD.has(event.type) || count(d.step)) &&
+    ((event.type !== 'assistant/attempt' && event.type !== 'assistant/message') || d.stream === undefined || Array.isArray(d.stream)) &&
+    (event.type !== 'assistant/attempt' || (!!state.open && state.open.turn === d.turn && state.open.step === d.step));
+  if (!passesGuards && !isSurface) return state;
   const s = structuredClone(state);
   s.seq = event.seq; s.updatedAt = event.time;
+  const surfaceBefore = isSurface ? surfaceTotals(s) : null;
+  if (isSurface) applySurface(s, event);
+  if (!passesGuards) return s;
   if (event.type === 'request/header') {
+    s.surface.tools = priceTools(d.header);
     const config = d.header?.config;
     if (typeof config?.provider === 'string' && typeof config.model === 'string') {
       const effort = typeof config.reasoningEffort === 'string' ? config.reasoningEffort : null;
@@ -152,22 +306,38 @@ export function reduceEvent(state, event) {
       if (s.open) s.open.route = { ...s.route };
       if (s.turn) s.turn.route = { ...s.route };
     }
+  } else if (event.type === 'request/context') {
+    if (count(d.contextWindow)) s.contextWindow = d.contextWindow;
+    const provider = typeof d.provider === 'string' ? d.provider : null;
+    const model = typeof d.model === 'string' ? d.model : null;
+    if (provider !== null && model !== null) {
+      s.route = { provider, model, ...(s.route.effort ? { effort: s.route.effort } : {}) };
+    }
   } else if (event.type === 'user/message') {
     s.previousFailure = null;
+    const kind = d.source?.kind;
+    if (kind === 'user') s.prompts++;
+    else if (kind === 'skill-invocation' && typeof d.source?.name === 'string' && d.source.name) {
+      const skill = skillStatRow(s, d.source.name);
+      skill.userCalls++; skill.lastSeen = event.time;
+      skill.injectedChars += textLengthOf(d.content);
+    }
   } else if (event.type === 'turn/start') {
     if (s.open) settle(s, event.time, null, null);
     s.turn = { number: d.turn, startedAt: event.time, endedAt: null, steps: 0, stats: emptyStats(), route: { ...s.route } };
-    s.previousFailure = null; s.tools = [];
+    s.previousFailure = null; s.tools = []; s.stepTokens = null; s.stepCalls = [];
   } else if (event.type === 'step/start') {
     if (s.open) settle(s, event.time, null, null);
+    if (s.stepTokens && s.turn && s.stepTokens.turn === s.turn.number) flushStepCalls(s, s.stepTokens.turn, s.stepTokens.step);
     begin(s, d, event.time);
     if (s.turn) s.turn.steps++;
+    s.stepTokens = { turn: d.turn, step: d.step, tokens: 0 };
   } else if (event.type === 'assistant/attempt') {
     applyStream(s.open, d.stream);
   } else if (event.type === 'assistant/message') {
     if (s.open?.turn === d.turn && s.open.step === d.step) {
       applyStream(s.open, d.stream);
-      settle(s, event.time, d.usage, d.message?.source);
+      settle(s, event.time, d.usage, d.message?.source, surfaceBefore);
     }
   } else if (event.type === 'llm/retry') {
     if (s.open?.turn === d.turn && s.open.step === d.step) {
@@ -178,9 +348,19 @@ export function reduceEvent(state, event) {
   } else if (event.type === 'tool/call') {
     const id = d.callId, name = d.name;
     if (typeof id === 'string' && typeof name === 'string' && !s.tools.some(t => t.id === id)) {
+      const skillName = name === 'skill' ? skillNameOf(d.arguments) : null;
       s.tools.push({ id, name, start: event.time, seq: event.seq, step: d.step,
-        route: { ...s.route }, signature: signatureOf(name, d.arguments) });
+        route: { ...s.route }, signature: signatureOf(name, d.arguments),
+        ...(skillName ? { skillName } : {}) });
       for (const b of books(s)) b.tools++;
+      const stat = toolStatRow(s, name);
+      stat.calls++;
+      // Token 归属口径：登记调用名单，该步用量在 step/end 统一结算给名单里每个调用（不拆分）。
+      if (s.stepCalls.length < TURN_LOG_CAP) s.stepCalls.push({ name, ...(skillName ? { skillName } : {}) });
+      if (skillName) {
+        const skill = skillStatRow(s, skillName);
+        skill.modelCalls++; skill.lastSeen = event.time;
+      }
     }
   } else if (event.type === 'tool/result') {
     // RC1 stores a ToolResultMessage, not top-level callId/result fields.
@@ -192,6 +372,13 @@ export function reduceEvent(state, event) {
       const failed = block?.isError === true || record(d.error);
       const dur = elapsed(t.start, event.time);
       for (const b of books(s, t.route)) { b.toolMs += dur; b.toolErrors += Number(failed); if (t.name === 'bash') b.bashMs = (b.bashMs ?? 0) + dur; }
+      const stat = toolStatRow(s, t.name);
+      const resultChars = block ? textLengthOf(block.content) : 0;
+      stat.toolMs += dur; stat.errors += Number(failed); stat.resultChars += resultChars;
+      if (t.skillName) {
+        const skill = skillStatRow(s, t.skillName);
+        skill.toolMs += dur; skill.errors += Number(failed); skill.injectedChars += resultChars;
+      }
       const resultHash = block ? fingerprint({ content: block.content, isError: failed, code: d.error?.code ?? null }) : null;
       const prev = s.previousFailure;
       if (failed && t.signature && resultHash) {
@@ -215,9 +402,18 @@ export function reduceEvent(state, event) {
     }
   } else if (event.type === 'step/end') {
     if (s.open?.turn === d.turn && s.open.step === d.step) settle(s, event.time, null, null);
+    flushStepCalls(s, d.turn, d.step);
   } else if (event.type === 'turn/end') {
     if (s.open) settle(s, event.time, null, null);
-    if (s.turn) s.turn.endedAt = event.time;
+    if (s.stepCalls.length && s.stepTokens && s.stepTokens.turn === d.turn) {
+      flushStepCalls(s, s.stepTokens.turn, s.stepTokens.step);
+    }
+    if (s.turn) {
+      s.turn.endedAt = event.time;
+      s.turns.push({ n: s.turn.number, start: s.turn.startedAt, end: event.time,
+        tokens: s.turn.stats.tokens, tools: s.turn.stats.tools, calls: s.turn.stats.calls });
+      if (s.turns.length > TURN_LOG_CAP) s.turns.splice(0, s.turns.length - TURN_LOG_CAP);
+    }
     s.tools = []; s.previousFailure = null;
   }
   return s;
@@ -232,7 +428,15 @@ function buildView(s) {
     pending: s.open ? { turn: s.open.turn, step: s.open.step, start: s.open.start,
       reasoningFirst: s.open.reasoningFirst, reasoningLast: s.open.reasoningLast,
       lastContentAt: s.open.lastContentAt } : null,
-    findings: s.findings, findingCount: s.findingCount };
+    findings: s.findings, findingCount: s.findingCount,
+    context: {
+      window: s.contextWindow,
+      surface: { ...s.surface, total: surfaceTotal(s.surface), partial: s.surfacePartial },
+      projected: surfaceTotal(s.surface),
+    },
+    requests: s.requests,
+    cwd: s.cwd, preset: s.preset, prompts: s.prompts,
+    toolStats: s.toolStats, skillStats: s.skillStats, turns: s.turns };
 }
 export function viewOf(s) {
   let wire = wireCache.get(s);

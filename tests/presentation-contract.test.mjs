@@ -27,11 +27,12 @@ test('the Markdown reader is supplied through the declared RC1 client injection'
   const bundle = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-primitives'))
   for (const [name, range] of Object.entries(pkg.peerDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(range, '>=0.2.0-rc.1 <0.2.1', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(range, '>=0.2.1-rc.1 <0.2.2', name)
   }
   for (const [name, version] of Object.entries(pkg.devDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.0-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.1-rc.2', name)
   }
+  assert.equal(pkg.engines.dsh, '>=0.2.1-rc.1 <0.2.2')
   assert.equal(pkg.peerDependencies['@deepseek-ai/cordis'], '~4.0.4')
   assert.equal(pkg.devDependencies['@deepseek-ai/cordis'], '4.0.4')
   for (const icon of [
@@ -52,6 +53,7 @@ test('the Markdown reader is supplied through the declared RC1 client injection'
     assert.doesNotMatch(source, new RegExp(`\\b${retired}\\b`))
     assert.doesNotMatch(bundle, new RegExp(`\\b${retired}\\b`))
   }
+  assert.match(source, /commandLine: \(line: number\) => `命令行 \$\{line\}`/)
   assert.match(source, /noExitCode: '未正常退出'/)
   assert.match(source, /codeLabel: '代码块'/)
   assert.match(source, /useSessionStatus/)
@@ -159,15 +161,18 @@ test('each Step can disclose a truthful nested model stage and provider-visible 
 
   assert.match(source, /function ModelStage/)
   assert.match(source, /模型阶段/)
-  assert.match(source, /首响应等待/)
   assert.match(source, /可见推理/)
+  // 耗时细节只在「请求透视」一处展示；内嵌展开区只留推理记录，不再重复耗时表
+  assert.match(source, /首个响应/)
   assert.match(source, /输出 \/ 工具意图/)
-  assert.match(source, /分段耗时不可用/)
+  assert.match(source, /模型总耗时/)
+  assert.match(source, /stageMetrics === null \? '未记录'/)
+  assert.doesNotMatch(source, /modelStageLedger/)
   assert.match(source, /aria-expanded=\{open\}/)
   assert.match(source, /<MarkdownText text=\{attempt\.reasoningText\}/)
   assert.match(source, /setLayerDisclosure\(current, 'model', modelKey, true\)/)
   assert.match(styles, /\.modelStage\s*\{/)
-  assert.match(styles, /\.modelStageBar\s*\{/)
+  assert.doesNotMatch(styles, /\.modelStageBar\s*\{/)
   assert.match(styles, /\.reasoningDisclosure\s*\{/)
   assert.match(modelTrace, /reasoningTokens/)
   assert.match(modelTrace, /reasoning-delta/)
