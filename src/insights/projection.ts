@@ -24,13 +24,22 @@ const surfaceDelta = z.object({system:signed,tools:signed,memory:signed,files:si
 const requestRow = z.object({turn:number,step:number,seq:z.number().int(),endedAt:z.number().finite(),route,usage,
   firstMs:nullableTime,modelMs:nullableTime,reasoningMs:nullableTime,surface:surfaceTotals,delta:surfaceDelta})
 const context = z.object({window:number.nullable(),surface:surfaceTotals.extend({partial:z.boolean()}),projected:number})
-export const viewSchema = z.object({version:z.literal(3),sessionId:z.string(),seq:z.number().int().min(-1),updatedAt:z.number().finite(),
+const toolStat = z.object({name:z.string(),calls:number,errors:number,toolMs:number,stepTokens:number,resultChars:number})
+const skillStat = z.object({name:z.string(),modelCalls:number,userCalls:number,errors:number,toolMs:number,stepTokens:number,injectedChars:number,lastSeen:number})
+const turnRow = z.object({n:number,start:z.number().finite(),end:z.number().finite(),tokens:number,tools:number,calls:number})
+export const viewSchema = z.object({version:z.literal(4),sessionId:z.string(),seq:z.number().int().min(-1),updatedAt:z.number().finite(),
   totals:stats,models:z.array(stats.extend({provider:z.string(),model:z.string(),effort:z.string().optional()})),days,turn,pending,findings:z.array(finding).max(30),findingCount:number,
-  context,requests:z.array(requestRow).max(60)})
-const stateSchema = z.object({version:z.literal(3),sessionId:z.string(),skip:number,seq:z.number().int().min(-1),updatedAt:z.number().finite(),
+  context,requests:z.array(requestRow).max(60),
+  cwd:z.string().nullable(),preset:z.string().nullable(),prompts:number,
+  toolStats:z.array(toolStat),skillStats:z.array(skillStat),turns:z.array(turnRow).max(500)})
+const stateSchema = z.object({version:z.literal(4),sessionId:z.string(),skip:number,seq:z.number().int().min(-1),updatedAt:z.number().finite(),
   route,totals:stats,models:z.array(stats.extend({provider:z.string(),model:z.string()})),days,turn,
+  cwd:z.string().nullable(),preset:z.string().nullable(),prompts:number,
+  stepTokens:z.object({turn:number,step:number,tokens:number}).nullable(),
+  stepCalls:z.array(z.object({name:z.string(),skillName:z.string().optional()})).max(500),
+  toolStats:z.array(toolStat),skillStats:z.array(skillStat),turns:z.array(turnRow).max(500),
   open:z.object({turn:number,step:number,start:nullableTime,first:nullableTime,reasoningFirst:nullableTime,reasoningLast:nullableTime,lastContentAt:nullableTime,usage,route}).nullable(),
-  tools:z.array(z.object({id:z.string(),name:z.string(),start:z.number().finite(),seq:number,step:number,route,signature:z.string().nullable()})),
+  tools:z.array(z.object({id:z.string(),name:z.string(),start:z.number().finite(),seq:number,step:number,route,signature:z.string().nullable(),skillName:z.string().optional()})),
   previousFailure:z.object({signature:z.string(),resultHash:z.string(),turn:number,seqs:z.array(number),steps:z.array(number)}).nullable(),
   findings:z.array(finding).max(30),findingCount:number,
   contextWindow:number.nullable(),surfaceNodes:z.array(z.object({seq:z.number().int(),bucket:bucketKeys,tokens:number})).max(3000),
@@ -42,7 +51,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {watcherInsights:InsightsView}
 }
 export function installProjection(ctx:Context):void {
-  ctx.sessionProjections.register<'watcherInsights',InsightsState>({key:'watcherInsights',stateVersion:3,stateSchema,
+  ctx.sessionProjections.register<'watcherInsights',InsightsState>({key:'watcherInsights',stateVersion:4,stateSchema,
     init:(header,inherited)=>stateSchema.parse(initialState(header,inherited)),apply:(state,event)=>reduceEvent(state,event),
     wire:{viewSchema,view:state=>viewOf(state)}})
   ctx.inject(['sessions'], c => {
