@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import test from 'node:test'
+import { test } from 'vitest'
 import { foldEvents, parseJsonl } from '../lib/types/observation/fold.js'
 import { deriveSessionTiming, turnElapsedReading } from '../lib/types/observation/performance.js'
 

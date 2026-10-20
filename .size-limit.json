@@ -1,0 +1,10 @@
+[
+  {
+    "path": "lib/client.js",
+    "limit": "90 kB"
+  },
+  {
+    "path": "lib/dsh-watcher.js",
+    "limit": "8 kB"
+  }
+]

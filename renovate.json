@@ -1,0 +1,8 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "7 days",
+  "labels": ["chore", "P3"],
+  "prConcurrentLimit": 2,
+  "dependencyDashboard": false
+}

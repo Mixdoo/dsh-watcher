@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import test from 'node:test'
+import { test } from 'vitest'
 
 const clientSource = new URL('../src/client/Watcher.tsx', import.meta.url)
 const clientStyles = new URL('../src/client/Watcher.module.css', import.meta.url)

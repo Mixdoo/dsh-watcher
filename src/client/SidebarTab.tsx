@@ -8,7 +8,6 @@ import type { SessionPendingInteractionBase, SessionStatusSnapshot } from '@deep
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createCompleteHistoryLoader } from './history-loader.ts'
 import { WorkPicturePanel, useObservedPicture } from './Watcher.tsx'
-import type { CompleteHistoryResult } from '../hub/history.ts'
 import type { WatcherSnapshot } from '../observation/fold.ts'
 import css from './Watcher.module.css'
 

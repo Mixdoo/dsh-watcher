@@ -1,0 +1,29 @@
+name: Bug
+description: Watcher 的显示、计费或投影和实际会话不一致
+title: '[bug] '
+labels: ['bug', 'P2', 'frontend']
+body:
+  - type: textarea
+    attributes:
+      label: 发生了什么
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 期望是什么
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Watcher 版本和 Harness 版本
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: 区域
+      options:
+        - frontend
+        - backend
+        - infra
+    validations:
+      required: true

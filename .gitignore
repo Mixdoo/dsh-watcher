@@ -1,8 +1,14 @@
 node_modules
 lib/types/
 coverage/
+dist/
+build/
 .dshx/
 *.tsbuildinfo
 .DS_Store
+.idea/
+.vscode/
 .env
 .env.*
+!.env.example
+.test-rerun.json

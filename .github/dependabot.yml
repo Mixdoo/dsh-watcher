@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    labels:
+      - chore
+      - P3
+    commit-message:
+      prefix: chore
+      include: scope

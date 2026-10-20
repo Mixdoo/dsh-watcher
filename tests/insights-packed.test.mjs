@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { foldModelTraceEvents, modelStageMetrics } from '../lib/types/observation/model-trace.js';
 const start={type:'step/start',seq:1,time:100,data:{turn:1,step:1}};

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 import { stepTimelineEntries } from '../lib/types/client/step-timeline.js'
 import { foldEvents } from '../lib/types/observation/fold.js'
 
