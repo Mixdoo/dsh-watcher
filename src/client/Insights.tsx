@@ -11,6 +11,7 @@ import { costCopy, detectLocale } from '../insights/i18n.mjs'
 import type { InsightsView } from '../insights/projection.ts'
 import css from './Insights.module.css'
 import { TimingPanel } from './TimingPanel.tsx'
+import { logError } from '../log.ts'
 
 type Limits = { silenceSeconds: number; reasoningSeconds: number }
 const STORAGE = 'dsh-watcher:insights-display:v1'
@@ -440,7 +441,7 @@ export function InsightsSettings(props: { remote?: any }) {
           }
         }
       })
-      .catch(console.error)
+      .catch(logError)
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [props.remote])
@@ -450,7 +451,7 @@ export function InsightsSettings(props: { remote?: any }) {
     setLoading(true)
     scanSessions(props.remote, { limit: 300 })
       .then((res: any) => { if (mountedRef.current) setSessions(res) })
-      .catch(console.error)
+      .catch(logError)
       .finally(() => { if (mountedRef.current) setLoading(false) })
   }
 

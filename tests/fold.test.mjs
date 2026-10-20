@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 import { foldEvents, mergeObservedPictures, pairTools, parseJsonl } from '../lib/types/observation/fold.js'
 
 function call(seq, turn, step, callId, name, args) {

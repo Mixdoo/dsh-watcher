@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      npm_config_auto_install_peers: 'false'
+      PNPM_CONFIG_AUTO_INSTALL_PEERS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --config.auto-install-peers=false
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm check:todos
+      - run: pnpm check:agents
+      - run: pnpm boundaries
+      - run: pnpm deadcode
+      - run: pnpm duplicates
+      - name: Test with coverage floors and suite timing
+        run: pnpm test:coverage
+      - run: pnpm size
+      - name: Security review
+        run: node scripts/security-review.mjs | tee security-review.md
+      - name: Time the client bundle build
+        run: node scripts/measure-build.mjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-review
+          path: security-review.md
+          if-no-files-found: ignore

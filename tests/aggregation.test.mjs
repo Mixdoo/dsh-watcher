@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 import { clusterOutcomeSummary, clusterWorkItems } from '../lib/types/hub/aggregation.js'
 import { normalizedSignature } from '../lib/types/observation/fold.js'
 

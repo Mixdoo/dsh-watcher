@@ -10,7 +10,10 @@ function resolveHarnessAdapter() {
   const configPath = join(homedir(), '.config/dshx/harness')
   const recorded = existsSync(configPath) ? readFileSync(configPath, 'utf8').trim() : undefined
   const selected = configured === undefined || configured.length === 0 ? recorded : configured
-  if (!selected) throw new Error('dshx client build requires a Harness root from DSHX_HARNESS or ~/.config/dshx/harness')
+  if (!selected)
+    throw new Error(
+      'dshx client build requires a Harness root from DSHX_HARNESS or ~/.config/dshx/harness',
+    )
   return join(resolve(selected), 'tools/dshx/src/client-build.js')
 }
 

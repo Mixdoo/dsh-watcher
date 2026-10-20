@@ -1,0 +1,7 @@
+{
+  "threshold": 3,
+  "reporters": ["console"],
+  "absolute": true,
+  "gitignore": true,
+  "ignore": ["lib/**", "node_modules/**", "coverage/**", "docs/**"]
+}

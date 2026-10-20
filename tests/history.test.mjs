@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 import { loadCompleteHistory } from '../lib/types/hub/history.js'
 
 test('load complete history walks every older page until the Session is complete', async () => {

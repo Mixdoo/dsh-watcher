@@ -11,18 +11,9 @@
     "rootDir": "src",
     "outDir": "lib/types",
     "jsx": "react-jsx",
-    "lib": [
-      "ES2024",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "types": [
-      "node",
-      "react"
-    ],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": ["node", "react"],
     "rewriteRelativeImportExtensions": true
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { initialState, reduceEvent, viewOf } from '../src/insights/engine.mjs';
 import { alertsOf, limitsOf, mergeModels, scanSessions } from '../src/insights/presentation.mjs';

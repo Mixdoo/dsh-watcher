@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, symlinkSync, realpathSync, readFileSync, rmSync, lstatSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, readFileSync, rmSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 

@@ -1,0 +1,24 @@
+name: Feature
+description: 给工作图、计费或投影加一个能力
+title: '[feature] '
+labels: ['feature', 'P3', 'frontend']
+body:
+  - type: textarea
+    attributes:
+      label: 要解决的问题
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 希望怎么用
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: 区域
+      options:
+        - frontend
+        - backend
+        - infra
+    validations:
+      required: true
