@@ -30,7 +30,7 @@ dsh plugin --profile web update dsh-watcher@latest
 
 这条官方 CLI 命令只写入 `web` profile，不能修改 Desktop App 的 profile；桌面端请使用上面的应用内“添加插件”向导。本发布已提交 `lib/`；普通使用不需要 clone、构建或安装 DSHX。
 
-需要 DeepSeek Harness **0.2.0-rc.2**（`@deepseek-ai/dsh@0.2.0-rc.2`，`dsh-v0.2.0-rc.2`）。`@deepseek-ai/dsh-*` 的 peer 范围是 `>=0.2.0-rc.1 <0.2.1`：接受 **0.2.0-rc.2** 和稳定版 **0.2.0**，拒绝 alpha，也拒绝 **0.1.7-rc.2**。Node `^22.19.0` 或 `>=24`。
+需要 DeepSeek Harness **0.2.1-rc.2**（`@deepseek-ai/dsh@0.2.1-rc.2`，`dsh-v0.2.1-rc.2`）。`@deepseek-ai/dsh-*` 的 peer 与 `engines.dsh` 范围是 `>=0.2.1-rc.1 <0.2.2`：接受 **0.2.1-rc.2** 和稳定版 **0.2.1**，拒绝 alpha，也拒绝 **0.2.0-rc.2**。Node `^22.19.0` 或 `>=24`。
 
 DeepSeek Harness Web 的只读插件。点会话标题栏里的眼睛，把 Session 收成一张能折叠的工作路径：这轮走了几步、跑了几次、花了多久；再展开某一步看并行分支、工具结果，或一条默认折着的推理记录。
 
@@ -75,7 +75,13 @@ dsh plugin --profile web remove dsh-watcher
 
 交互约定在 [DESIGN.md](./DESIGN.md)。MIT。
 
-## 本次更新（0.8.0）
+## 本次更新（0.9.0）
+
+- 对齐官方 DeepSeek Harness **0.2.1-rc.2**（`dsh-v0.2.1-rc.2`，SHA `687f282e8625c6b8d11ff58211a90524be2e4317`）。`@deepseek-ai/dsh-*` 的 peer 与 `engines.dsh` 是 `>=0.2.1-rc.1 <0.2.2`：接受 `0.2.1-rc.2` 和稳定版 `0.2.1`，拒绝 alpha，也拒绝 `0.2.0-rc.2`。
+- 图标仍是 `IconChevronRightOutlineRegular`、`IconRefreshOutlineRegular`、`IconCheckOutlineRegular`、`IconCopyOutlineRegular`。这四个名字在 `0.2.1-rc.2` 的 primitives 里还在。带尺寸后缀的旧导出仍然没有。
+- 终端卡片补上 `0.2.1` 必填的 `commandLine` 文案（`命令行 N`）。
+
+## 0.8.0
 
 - 日图按每次结算的本地日历日记 token，不再把整段会话堆到最后活跃日。旧的 version 1 缓存仍按原来的方式显示，会话重算后变成 version 2。
 - 装了 dsh-better-sidebar 时，右侧栏多一个 Watcher 页，内容是工作图。没装时，会话头按钮和设置页不变。侧栏不是依赖。
